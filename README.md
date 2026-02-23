@@ -91,9 +91,13 @@ The plugin is quiet when it should be:
 
 ## Install
 
+**Download** the latest `.tar.gz` from the [releases page](https://github.com/symbiomind/openclaw-memory-mcp-ce-plugin/releases), then install:
+
 ```bash
-openclaw plugins install openclaw-memory-mcp-ce-plugin
+openclaw plugins install ./openclaw-memory-mcp-ce-plugin-v0.3.1.tar.gz
 ```
+
+Dependencies (`@sinclair/typebox`) are installed automatically — no `npm install` needed.
 
 Or link a local clone for development:
 
@@ -106,6 +110,8 @@ Restart the gateway after installing:
 ```bash
 openclaw gateway restart
 ```
+
+> **npm package coming soon** — `openclaw plugins install openclaw-memory-mcp-ce-plugin`
 
 ---
 
