@@ -1,0 +1,104 @@
+{
+  "id": "memory-mcp-ce",
+  "kind": "memory",
+  "uiHints": {
+    "serverUrl": {
+      "label": "Memory MCP-CE Server URL",
+      "placeholder": "http://localhost:5005",
+      "help": "Base URL of your shared memory-mcp-ce instance"
+    },
+    "bearerToken": {
+      "label": "Bearer Token",
+      "sensitive": true,
+      "help": "BEARER_TOKEN from your memory-mcp-ce .env (leave empty if auth disabled)"
+    },
+    "autoCapture": {
+      "label": "Auto-Capture",
+      "help": "Automatically store conversation pairs to memory-mcp-ce after each agent turn."
+    },
+    "autoRecall": {
+      "label": "Auto-Recall",
+      "help": "Automatically retrieve relevant memories before each agent turn."
+    },
+    "autoRecallNumResults": {
+      "label": "Auto-Recall Results",
+      "help": "How many memories to surface per turn during auto-recall. Default: 3.",
+      "advanced": true,
+      "placeholder": "3"
+    },
+    "minSimilarity": {
+      "label": "Min Similarity Threshold",
+      "help": "Minimum similarity score (0–1) for auto-recall injection. Default: 0.60",
+      "advanced": true,
+      "placeholder": "0.60"
+    },
+    "allowedChannels": {
+      "label": "Allowed Channels",
+      "help": "Session channels to store/recall for. Default: [\"main\"]. Filters out cron, discord, etc.",
+      "advanced": true,
+      "placeholder": "main"
+    },
+    "excludeAgents": {
+      "label": "Excluded Agents",
+      "help": "Agent IDs to skip entirely (belt-and-suspenders with channel filter). Default: [\"cron\"].",
+      "advanced": true,
+      "placeholder": "cron"
+    },
+    "noReplyTokens": {
+      "label": "No-Reply Tokens",
+      "help": "Agent responses that mean 'nothing to say' — skip storing these. Default: [\"NO_REPLY\",\"HEARTBEAT_OK\"].",
+      "advanced": true
+    },
+    "minResponseChars": {
+      "label": "Min Response Characters",
+      "help": "Skip storing pairs where the agent response is shorter than this. Default: 80.",
+      "advanced": true,
+      "placeholder": "80"
+    }
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["serverUrl"],
+    "properties": {
+      "serverUrl": {
+        "type": "string"
+      },
+      "bearerToken": {
+        "type": "string"
+      },
+      "autoCapture": {
+        "type": "boolean"
+      },
+      "autoRecall": {
+        "type": "boolean"
+      },
+      "autoRecallNumResults": {
+        "type": "number",
+        "minimum": 1,
+        "maximum": 20
+      },
+      "minSimilarity": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      },
+      "allowedChannels": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "excludeAgents": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "noReplyTokens": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "minResponseChars": {
+        "type": "number",
+        "minimum": 0
+      }
+    }
+  }
+}
