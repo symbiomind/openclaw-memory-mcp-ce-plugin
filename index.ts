@@ -1,11 +1,27 @@
 /**
- * openclaw-memory-mcp-ce-plugin  v0.3.1
+ * openclaw-memory-mcp-ce-plugin  v0.4.0
  *
  * OpenClaw memory slot plugin backed by memory-mcp-ce.
  * Replaces flat-file markdown memory with persistent semantic memory:
  *   - Auto-capture: complete user+agent conversation pairs stored after each turn
  *   - Auto-recall:  relevant memories injected before each agent turn (with dedup)
  *   - Tools:        memory_search, memory_get exposed to the agent
+ *
+ * v0.4.0 changes:
+ *   - FIX: Turn buffer for multi-tool turns (cleaner USER/AGENT pairing)
+ *     Previously, if an assistant message contained BOTH text AND tool_use blocks,
+ *     it was stored immediately, clearing pendingUser. The final response (after
+ *     tool results) was then stored without user context — a broken pair.
+ *     Fix: assistant messages with tool_use blocks in content are treated as
+ *     intermediate turns — pendingUser is preserved until the final assistant
+ *     response (no tool_use blocks). This ensures every stored pair has both
+ *     [User] and [Agent] entries even across long multi-tool exchanges.
+ *
+ * v0.3.2 changes:
+ *   - FIX: seen IDs always cleared on session_start (not just when resumedFrom is unset)
+ *     OpenClaw sets resumedFrom on BOTH daily resets AND gateway restarts, so the old
+ *     check meant seen IDs from yesterday bled into the next morning's session.
+ *     Watermark still reloads from disk on resume — only seen IDs reset fresh.
  *
  * v0.3.1 changes:
  *   - NEW: stored memory IDs immediately added to agent's seen list
@@ -328,6 +344,22 @@ function extractUserText(m: Record<string, unknown>): string {
 }
 
 /**
+ * Returns true if an assistant message contains tool_use blocks.
+ * These are intermediate turns — the agent has more work to do before
+ * it delivers its final response. We should NOT store the pair yet.
+ */
+function hasToolUseBlocks(m: Record<string, unknown>): boolean {
+  const content = m.content;
+  if (!Array.isArray(content)) return false;
+  return content.some(
+    (b) =>
+      b != null &&
+      typeof b === "object" &&
+      (b as Record<string, unknown>).type === "tool_use",
+  );
+}
+
+/**
  * Extract clean text from an assistant message.
  * Only type="text" blocks — skips "thinking" blocks entirely.
  */
@@ -550,6 +582,12 @@ async function storeNewPairs(
         pendingUser = text;
       }
     } else if (role === "assistant") {
+      // If this assistant message contains tool_use blocks it is an INTERMEDIATE
+      // turn — the agent is dispatching tools and will respond further once they
+      // complete. Preserve pendingUser and skip storing now so we can pair the
+      // user's message with the agent's real final response instead.
+      if (hasToolUseBlocks(m)) continue;
+
       const agentText = extractAssistantText(m);
       if (!agentText) continue;
 
@@ -642,7 +680,7 @@ const plugin = {
 
     const client = new McpCeClient(cfg.serverUrl, cfg.bearerToken || undefined);
     api.logger.info(
-      `memory-mcp-ce v0.3.1: loaded (server: ${cfg.serverUrl}, ` +
+      `memory-mcp-ce v0.4.0: loaded (server: ${cfg.serverUrl}, ` +
       `recall: top-${cfg.autoRecallNumResults} above ${Math.round(cfg.minSimilarity * 100)}%, ` +
       `channels: [${cfg.allowedChannels.join(",")}])`,
     );
@@ -723,27 +761,31 @@ const plugin = {
     // Lifecycle hooks
     // ========================================================================
 
-    // Session start: new session → wipe seen IDs + watermark; resumed → reload from disk
+    // Session start: always clear seen IDs for fresh recall.
+    // resumedFrom is set on BOTH daily resets AND gateway restarts, so we
+    // can't use it to distinguish "mid-conversation restart" from "new day".
+    // Seen IDs are in-session dedup only — new session always means fresh slate.
+    // Watermark is storage dedup across all time — reload from disk on resume.
     api.on("session_start", async (event, ctx) => {
       const agentId = ctx.agentId ?? "default";
       const sessionKey = ctx.sessionId ?? agentId;
 
+      // Always fresh seen IDs — no stale yesterday list bleeding into today
+      agentSeenIds.set(agentId, new Set());
+      agentLastRecallMs.delete(agentId);
+      await clearSeenIdsFromDisk(agentId);
+
       if (event.resumedFrom) {
-        // Gateway restart resumed an existing session — reload from disk
-        const diskIds = await loadSeenIdsFromDisk(agentId);
-        agentSeenIds.set(agentId, diskIds);
+        // Resume watermark from disk (gateway restart or daily reset)
         const diskWatermark = await loadWatermarkFromDisk(sessionKey);
         sessionWatermark.set(sessionKey, diskWatermark);
         api.logger.info(
           `memory-mcp-ce: session resumed for agent ${agentId}, ` +
-          `reloaded ${diskIds.size} seen IDs, watermark=${diskWatermark}`,
+          `seen IDs cleared (fresh recall), watermark=${diskWatermark}`,
         );
       } else {
-        // Fresh session — wipe everything for clean slate
-        agentSeenIds.set(agentId, new Set());
-        agentLastRecallMs.delete(agentId);
+        // Brand new session — wipe watermark too
         sessionWatermark.set(sessionKey, 0);
-        await clearSeenIdsFromDisk(agentId);
         await clearWatermarkFromDisk(sessionKey);
         api.logger.info(
           `memory-mcp-ce: new session for agent ${agentId}, seen IDs + watermark cleared`,
@@ -899,7 +941,7 @@ const plugin = {
       start: async (ctx) => {
         stateDir = ctx.stateDir;
         api.logger.info(
-          `memory-mcp-ce v0.3.1: service starting (stateDir: ${stateDir})`,
+          `memory-mcp-ce v0.4.0: service starting (stateDir: ${stateDir})`,
         );
         try {
           await client.init();
