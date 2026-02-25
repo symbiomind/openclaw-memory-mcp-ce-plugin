@@ -1,11 +1,23 @@
 /**
- * openclaw-memory-mcp-ce-plugin  v0.5.2
+ * openclaw-memory-mcp-ce-plugin  v0.5.3
  *
  * OpenClaw memory slot plugin backed by memory-mcp-ce.
  * Replaces flat-file markdown memory with persistent semantic memory:
  *   - Auto-capture: complete user+agent conversation pairs stored after each turn
  *   - Auto-recall:  relevant memories injected before each agent turn (with dedup)
  *   - Tools:        memory_search, memory_get exposed to the agent
+ *
+ * v0.5.3 changes:
+ *   - FIX: Replace semantic workflow labels ("session-memory", "unprocessed") with
+ *     a numeric nonce ("52868312778495") to prevent three failure modes:
+ *     1. Trending label pollution — memory-mcp-ce excludes numbers/dates from
+ *        trending_labels, so the nonce never drowns out real topics.
+ *     2. Infinite relabeling loop — LLMs processing memories for label enrichment
+ *        can regenerate semantic words from context, re-triggering the workflow.
+ *        A numeric nonce is never generated from natural language.
+ *     3. replace_labels overlap errors — the enhanced replace_labels tool errors
+ *        if the target label appears in the new label set. Semantic words like
+ *        "unprocessed" can appear in LLM suggestions; a nonce cannot.
  *
  * v0.5.2 changes:
  *   - FIX: session_start now uses ctx.sessionKey (same key as agent_end) to
@@ -149,7 +161,7 @@ function parseSimilarity(s: string): number {
 function formatMemory(m: MemoryRecord): string {
   const sim = m.similarity;
   const labels = m.labels
-    .filter((l) => !l.startsWith("role-") && l !== "session-memory" && l !== "unprocessed")
+    .filter((l) => !l.startsWith("role-") && l !== "52868312778495")
     .join(", ");
   const labelStr = labels ? ` | ${labels}` : "";
   return `[Memory #${m.id} | ${sim} match | ${m.source} | ${m.time}${labelStr}]\n${m.content}`;
@@ -617,7 +629,7 @@ async function storeNewPairs(
         // this batch. Store it as an unpaired entry and move on.
         if (pendingUser) {
           const content = `[User]: ${pendingUser}`;
-          const labels = ["session-memory", "unprocessed", dateLabel].join(",");
+          const labels = ["52868312778495", dateLabel].join(",");
           try {
             const storedId = await client.storeMemory(content, labels, source);
             stored++;
@@ -680,7 +692,7 @@ async function storeNewPairs(
       parts.push(`[Agent]: ${fullAgentText}`);
       const content = parts.join("\n\n");
 
-      const labels = ["session-memory", "unprocessed", dateLabel].join(",");
+      const labels = ["52868312778495", dateLabel].join(",");
       try {
         const storedId = await client.storeMemory(content, labels, source);
         stored++;
@@ -753,7 +765,7 @@ const plugin = {
 
     const client = new McpCeClient(cfg.serverUrl, cfg.bearerToken || undefined);
     api.logger.info(
-      `memory-mcp-ce v0.5.2: loaded (server: ${cfg.serverUrl}, ` +
+      `memory-mcp-ce v0.5.3: loaded (server: ${cfg.serverUrl}, ` +
       `recall: top-${cfg.autoRecallNumResults} above ${Math.round(cfg.minSimilarity * 100)}%, ` +
       `channels: [${cfg.allowedChannels.join(",")}])`,
     );
@@ -1017,7 +1029,7 @@ const plugin = {
       start: async (ctx) => {
         stateDir = ctx.stateDir;
         api.logger.info(
-          `memory-mcp-ce v0.5.2: service starting (stateDir: ${stateDir})`,
+          `memory-mcp-ce v0.5.3: service starting (stateDir: ${stateDir})`,
         );
         try {
           await client.init();
