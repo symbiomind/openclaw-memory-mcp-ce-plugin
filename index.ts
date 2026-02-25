@@ -1,11 +1,42 @@
 /**
- * openclaw-memory-mcp-ce-plugin  v0.4.0
+ * openclaw-memory-mcp-ce-plugin  v0.5.2
  *
  * OpenClaw memory slot plugin backed by memory-mcp-ce.
  * Replaces flat-file markdown memory with persistent semantic memory:
  *   - Auto-capture: complete user+agent conversation pairs stored after each turn
  *   - Auto-recall:  relevant memories injected before each agent turn (with dedup)
  *   - Tools:        memory_search, memory_get exposed to the agent
+ *
+ * v0.5.2 changes:
+ *   - FIX: session_start now uses ctx.sessionKey (same key as agent_end) to
+ *     clear/load the watermark. Previously it used ctx.sessionId (a UUID),
+ *     so new-session clears targeted the wrong file — leaving a stale watermark
+ *     from a prior session under the same sessionKey. On the next agent_end,
+ *     that stale value (e.g. 97) was loaded and allMessages.slice(97) returned
+ *     [] for a fresh session, silently storing nothing.
+ *   - FIX: Stale watermark self-heal in storeNewPairs — if watermark >
+ *     allMessages.length, it's from a different session; reset to 0 and log a
+ *     warning. Prevents silent storage failures after gateway restarts where
+ *     the session is resumed but the conversation is shorter than the old mark.
+ *
+ * v0.5.1 changes:
+ *   - DISPLAY: Relative time shown in recalled memory headers
+ *     formatMemory now includes m.time ("18 minutes ago", "2 days ago") —
+ *     already returned by memory-mcp-ce — instead of omitting it entirely.
+ *     Much more human-readable than inferring age from labels or raw dates.
+ *
+ * v0.5.0 changes:
+ *   - FIX: Watermark rollback for mid-chain agent_end calls
+ *     agent_end fires after EACH tool step, not once at the end of a full turn.
+ *     Previously, storeNewPairs advanced the watermark to allMessages.length
+ *     immediately, so by the time the final response arrived, the user message
+ *     was already past the watermark — producing [Agent]-only memories.
+ *     Fix: watermark is now committed at the END of processing. If pendingUser
+ *     is still set (no final agent response found in this batch), the watermark
+ *     rolls back to just before the pending user message so the next agent_end
+ *     call re-processes from there and pairs correctly. The trailing-user storage
+ *     path is removed — incomplete pairs should never be stored mid-chain;
+ *     before_compaction handles any genuine end-of-session stragglers.
  *
  * v0.4.0 changes:
  *   - FIX: Turn buffer for multi-tool turns (cleaner USER/AGENT pairing)
@@ -121,7 +152,7 @@ function formatMemory(m: MemoryRecord): string {
     .filter((l) => !l.startsWith("role-") && l !== "session-memory" && l !== "unprocessed")
     .join(", ");
   const labelStr = labels ? ` | ${labels}` : "";
-  return `[Memory #${m.id} | ${sim} match | ${m.source}${labelStr}]\n${m.content}`;
+  return `[Memory #${m.id} | ${sim} match | ${m.source} | ${m.time}${labelStr}]\n${m.content}`;
 }
 
 interface McpToolResult {
@@ -537,23 +568,39 @@ async function storeNewPairs(
     sessionWatermark.set(sessionKey, diskWatermark);
   }
 
-  const watermark = sessionWatermark.get(sessionKey) ?? 0;
-  const newMessages = allMessages.slice(watermark);
+  let watermark = sessionWatermark.get(sessionKey) ?? 0;
 
-  // Advance watermark immediately — before any async work — so concurrent
-  // calls don't reprocess the same messages even if storage fails.
-  const newWatermark = allMessages.length;
-  sessionWatermark.set(sessionKey, newWatermark);
-  // Persist to disk immediately so gateway restarts don't cause re-flush
-  void saveWatermarkToDisk(sessionKey, newWatermark);
+  // Self-heal: if watermark exceeds available messages, the saved value is
+  // from a different (older) session with the same sessionKey. Reset to 0
+  // so this session's messages are processed from the beginning.
+  if (watermark > allMessages.length) {
+    logger.warn(
+      `memory-mcp-ce: watermark ${watermark} > messages ${allMessages.length} for ${sessionKey} — resetting (stale from prior session)`,
+    );
+    watermark = 0;
+    sessionWatermark.set(sessionKey, 0);
+    void saveWatermarkToDisk(sessionKey, 0);
+  }
+
+  const newMessages = allMessages.slice(watermark);
 
   if (newMessages.length === 0) return 0;
 
   const dateLabel = new Date().toISOString().slice(0, 10);
   let stored = 0;
   let pendingUser: string | null = null;
+  // Accumulated text from intermediate assistant messages (those with tool_use
+  // blocks). When the final assistant response arrives (no tool_use), these
+  // are prepended so the stored memory captures the agent's interpretation of
+  // each tool step — not just the final reply.
+  const agentTextBuffer: string[] = [];
+  // Absolute index in allMessages where the current pendingUser was found.
+  // Used to roll back the watermark if this batch ends without a final
+  // agent response (i.e. agent_end fired mid-tool-chain, not at turn end).
+  let pendingUserAbsoluteIndex = -1;
 
-  for (const msg of newMessages) {
+  for (let i = 0; i < newMessages.length; i++) {
+    const msg = newMessages[i];
     if (!msg || typeof msg !== "object") continue;
     const m = msg as Record<string, unknown>;
     const role = typeof m.role === "string" ? m.role : "unknown";
@@ -563,7 +610,11 @@ async function storeNewPairs(
     if (role === "user") {
       const text = extractUserText(m);
       if (text) {
-        // Flush any unpaired user message (back-to-back user turns edge case)
+        // New user message — clear any intermediate agent text from a prior
+        // exchange that never completed (shouldn't happen, but defensive).
+        agentTextBuffer.length = 0;
+        // Back-to-back user turns: the previous user had no agent response in
+        // this batch. Store it as an unpaired entry and move on.
         if (pendingUser) {
           const content = `[User]: ${pendingUser}`;
           const labels = ["session-memory", "unprocessed", dateLabel].join(",");
@@ -580,13 +631,22 @@ async function storeNewPairs(
           }
         }
         pendingUser = text;
+        pendingUserAbsoluteIndex = watermark + i;
       }
     } else if (role === "assistant") {
       // If this assistant message contains tool_use blocks it is an INTERMEDIATE
       // turn — the agent is dispatching tools and will respond further once they
       // complete. Preserve pendingUser and skip storing now so we can pair the
       // user's message with the agent's real final response instead.
-      if (hasToolUseBlocks(m)) continue;
+      // However, capture any text content so intermediate agent interpretations
+      // (e.g. search summaries) aren't lost from the stored memory.
+      if (hasToolUseBlocks(m)) {
+        const intermediateText = extractAssistantText(m);
+        if (intermediateText) {
+          agentTextBuffer.push(intermediateText);
+        }
+        continue;
+      }
 
       const agentText = extractAssistantText(m);
       if (!agentText) continue;
@@ -594,18 +654,30 @@ async function storeNewPairs(
       // Skip terminal no-op signals — agent had nothing real to say
       if (cfg.noReplyTokens.includes(agentText.trim())) {
         pendingUser = null;
+        pendingUserAbsoluteIndex = -1;
+        agentTextBuffer.length = 0;
         continue;
       }
 
+      // Combine any buffered intermediate text with the final response.
+      // This captures the agent's interpretation of each tool step
+      // (e.g. search summaries, fetch results) alongside the final reply.
+      const fullAgentText = agentTextBuffer.length > 0
+        ? [...agentTextBuffer, agentText].join("\n\n")
+        : agentText;
+      agentTextBuffer.length = 0;
+
       // Skip responses that are too short to be meaningful
-      if (agentText.trim().length < cfg.minResponseChars) {
+      // (checked against the FULL combined text, not just the final message)
+      if (fullAgentText.trim().length < cfg.minResponseChars) {
         pendingUser = null;
+        pendingUserAbsoluteIndex = -1;
         continue;
       }
 
       const parts: string[] = [];
       if (pendingUser) parts.push(`[User]: ${pendingUser}`);
-      parts.push(`[Agent]: ${agentText}`);
+      parts.push(`[Agent]: ${fullAgentText}`);
       const content = parts.join("\n\n");
 
       const labels = ["session-memory", "unprocessed", dateLabel].join(",");
@@ -622,25 +694,26 @@ async function storeNewPairs(
       }
 
       pendingUser = null;
+      pendingUserAbsoluteIndex = -1;
     }
   }
 
-  // Trailing unpaired user turn
-  if (pendingUser) {
-    const content = `[User]: ${pendingUser}`;
-    const labels = ["session-memory", "unprocessed", dateLabel].join(",");
-    try {
-      const storedId = await client.storeMemory(content, labels, source);
-      stored++;
-      if (storedId !== null) {
-        const seen = agentSeenIds.get(agentId) ?? new Set<number>();
-        seen.add(storedId);
-        agentSeenIds.set(agentId, seen);
-      }
-    } catch (err) {
-      logger.warn(`memory-mcp-ce: failed to store trailing user turn: ${String(err)}`);
-    }
-  }
+  // Watermark commit:
+  //
+  // If pendingUser is still set at this point, agent_end fired mid-tool-chain
+  // (the agent dispatched tools and hasn't delivered its final text response
+  // yet). Rolling the watermark back to just before the pending user message
+  // means the next agent_end call will re-process from that point and can
+  // correctly pair the user message with the eventual final response.
+  //
+  // If pendingUser is null, all complete pairs were stored — advance to end.
+  const newWatermark =
+    pendingUser !== null && pendingUserAbsoluteIndex >= 0
+      ? pendingUserAbsoluteIndex
+      : allMessages.length;
+
+  sessionWatermark.set(sessionKey, newWatermark);
+  void saveWatermarkToDisk(sessionKey, newWatermark);
 
   if (stored > 0) {
     logger.info(`memory-mcp-ce: stored ${stored} exchange(s) for session ${sessionKey}`);
@@ -680,7 +753,7 @@ const plugin = {
 
     const client = new McpCeClient(cfg.serverUrl, cfg.bearerToken || undefined);
     api.logger.info(
-      `memory-mcp-ce v0.4.0: loaded (server: ${cfg.serverUrl}, ` +
+      `memory-mcp-ce v0.5.2: loaded (server: ${cfg.serverUrl}, ` +
       `recall: top-${cfg.autoRecallNumResults} above ${Math.round(cfg.minSimilarity * 100)}%, ` +
       `channels: [${cfg.allowedChannels.join(",")}])`,
     );
@@ -768,7 +841,10 @@ const plugin = {
     // Watermark is storage dedup across all time — reload from disk on resume.
     api.on("session_start", async (event, ctx) => {
       const agentId = ctx.agentId ?? "default";
-      const sessionKey = ctx.sessionId ?? agentId;
+      // Use ctx.sessionKey (same key agent_end uses) so watermark clears/loads
+      // target the correct file. ctx.sessionId is a per-gateway-instance UUID
+      // and differs from the stable ctx.sessionKey used everywhere else.
+      const sessionKey = ctx.sessionKey ?? ctx.sessionId ?? agentId;
 
       // Always fresh seen IDs — no stale yesterday list bleeding into today
       agentSeenIds.set(agentId, new Set());
@@ -784,7 +860,7 @@ const plugin = {
           `seen IDs cleared (fresh recall), watermark=${diskWatermark}`,
         );
       } else {
-        // Brand new session — wipe watermark too
+        // Brand new session — wipe watermark so we start from message 0
         sessionWatermark.set(sessionKey, 0);
         await clearWatermarkFromDisk(sessionKey);
         api.logger.info(
@@ -941,7 +1017,7 @@ const plugin = {
       start: async (ctx) => {
         stateDir = ctx.stateDir;
         api.logger.info(
-          `memory-mcp-ce v0.4.0: service starting (stateDir: ${stateDir})`,
+          `memory-mcp-ce v0.5.2: service starting (stateDir: ${stateDir})`,
         );
         try {
           await client.init();
