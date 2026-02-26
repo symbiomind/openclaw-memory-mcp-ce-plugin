@@ -1,11 +1,21 @@
 /**
- * openclaw-memory-mcp-ce-plugin  v0.5.3
+ * openclaw-memory-mcp-ce-plugin  v0.5.4
  *
  * OpenClaw memory slot plugin backed by memory-mcp-ce.
  * Replaces flat-file markdown memory with persistent semantic memory:
  *   - Auto-capture: complete user+agent conversation pairs stored after each turn
  *   - Auto-recall:  relevant memories injected before each agent turn (with dedup)
  *   - Tools:        memory_search, memory_get exposed to the agent
+ *
+ * v0.5.4 changes:
+ *   - FIX: hasToolUseBlocks() now detects both "tool_use" (Anthropic/OpenAI API
+ *     format) and "toolCall" (OpenClaw session log format). Previously only
+ *     "tool_use" was checked, so hasToolUseBlocks() always returned false when
+ *     running inside OpenClaw. This caused mixed text+tool assistant messages
+ *     (agent chatting while calling a tool in the same turn) to be treated as
+ *     final responses and stored immediately — clearing pendingUser prematurely.
+ *     The actual final reply then stored as an orphaned [Agent]-only entry with
+ *     no [User] context. One || condition; weeks of broken memories. 🦞
  *
  * v0.5.3 changes:
  *   - FIX: Replace semantic workflow labels ("session-memory", "unprocessed") with
@@ -387,9 +397,13 @@ function extractUserText(m: Record<string, unknown>): string {
 }
 
 /**
- * Returns true if an assistant message contains tool_use blocks.
+ * Returns true if an assistant message contains tool call blocks.
  * These are intermediate turns — the agent has more work to do before
  * it delivers its final response. We should NOT store the pair yet.
+ *
+ * Handles both formats:
+ *   - "tool_use"  — Anthropic/OpenAI raw API format
+ *   - "toolCall"  — OpenClaw session log format (provider-agnostic)
  */
 function hasToolUseBlocks(m: Record<string, unknown>): boolean {
   const content = m.content;
@@ -398,7 +412,8 @@ function hasToolUseBlocks(m: Record<string, unknown>): boolean {
     (b) =>
       b != null &&
       typeof b === "object" &&
-      (b as Record<string, unknown>).type === "tool_use",
+      ((b as Record<string, unknown>).type === "tool_use" ||
+        (b as Record<string, unknown>).type === "toolCall"),
   );
 }
 
