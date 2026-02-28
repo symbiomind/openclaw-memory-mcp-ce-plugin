@@ -141,6 +141,19 @@ interface McpClient {
   callTool(name: string, args: Record<string, unknown>): Promise<unknown>;
 }
 
+async function getUnprocessedCount(mcp: McpClient, nonce: string): Promise<number> {
+  try {
+    const result = await mcp.callTool("memory_stats", { labels: nonce }) as {
+      content: Array<{ text: string }>;
+    };
+    const text = result.content.map((c) => c.text).join("");
+    const parsed = JSON.parse(text) as { matching?: number };
+    return parsed.matching ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
 interface Logger {
   info(msg: string): void;
   warn(msg: string): void;
@@ -225,11 +238,8 @@ export class EnrichmentCron {
         }
       }
 
-      // Check remaining backlog to set next interval
-      const check = await this.mcp.retrieveMemoriesStructured(
-        undefined, this.nonce, undefined, 1,
-      );
-      remaining = check.length;
+      // Check remaining backlog via memory_stats for accurate adaptive interval
+      remaining = await getUnprocessedCount(this.mcp, this.nonce);
 
     } catch (err) {
       this.logger.warn(`memory-mcp-ce enrichment: tick error — ${String(err)}`);
@@ -244,13 +254,12 @@ export class EnrichmentCron {
       );
     }
 
-    // Adaptive interval based on remaining backlog
-    // (we can only see 1 at a time in the check above, so use heuristic:
-    //  if we processed a full batch, assume more remain → run faster)
+    // Adaptive interval based on real remaining backlog count
     const nextInterval =
-      processed >= this.batchSize ? INTERVAL_HIGH_MS :
-      remaining > 0              ? INTERVAL_MEDIUM_MS :
-                                   INTERVAL_IDLE_MS;
+      remaining > 100 ? INTERVAL_HIGH_MS   :
+      remaining > 10  ? INTERVAL_MEDIUM_MS :
+      remaining > 0   ? INTERVAL_LOW_MS    :
+                        INTERVAL_IDLE_MS;
 
     this.schedule(nextInterval);
   }
