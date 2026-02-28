@@ -1163,7 +1163,6 @@ const plugin = {
                 );
               }
             }
-            }
           } catch (err) {
             api.logger.warn(`memory-mcp-ce: L3 trending wake-up failed: ${String(err)}`);
           }
