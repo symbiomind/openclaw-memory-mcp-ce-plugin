@@ -129,14 +129,17 @@ async function callLlm(
  * Returns null if the output doesn't meet quality bar (triggers retry).
  */
 function parseLabels(raw: string): string | null {
-  // Split on commas first, then clean each token individually
-  // (avoids "user-frustration, mitigation" → "user-frustrationmitigation")
+  // Split on ALL delimiters (comma, space, newline, tab) so that
+  // "label-a label-b" and "label-a,label-b" both produce two tokens.
+  // Strip punctuation noise (!, .) from each fragment, validate format,
+  // then take the first 4-6 valid tokens.
   const tokens = raw
-    .split(",")
-    .map(t => t.replace(/[\s!.]/g, "").toLowerCase())
-    .filter(t => /^[a-z][a-z0-9-]+$/.test(t));
+    .split(/[,\s]+/)
+    .map(t => t.replace(/[!.]/g, "").toLowerCase().trim())
+    .filter(t => /^[a-z][a-z0-9-]{2,}$/.test(t))
+    .slice(0, 6);
 
-  if (tokens.length < 4 || tokens.length > 6) return null;
+  if (tokens.length < 4) return null;
 
   return tokens.join(",");
 }
