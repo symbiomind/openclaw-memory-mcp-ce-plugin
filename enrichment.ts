@@ -115,15 +115,16 @@ async function callLlm(
  * Returns null if the output doesn't meet quality bar (triggers retry).
  */
 function parseLabels(raw: string): string | null {
-  // Strip all whitespace, !, .  then extract the label list
-  const cleaned = raw.replace(/[\s!.]/g, "");
-  const match = cleaned.match(/[a-z][a-z0-9-]*(?:,[a-z][a-z0-9-]*)*/);
-  if (!match) return null;
+  // Split on commas first, then clean each token individually
+  // (avoids "user-frustration, mitigation" → "user-frustrationmitigation")
+  const tokens = raw
+    .split(",")
+    .map(t => t.replace(/[\s!.]/g, "").toLowerCase())
+    .filter(t => /^[a-z][a-z0-9-]+$/.test(t));
 
-  const labels = match[0].split(",").filter(Boolean);
-  if (labels.length < 4 || labels.length > 6) return null;
+  if (tokens.length < 4 || tokens.length > 6) return null;
 
-  return labels.join(",");
+  return tokens.join(",");
 }
 
 // ============================================================================
@@ -167,7 +168,7 @@ export class EnrichmentCron {
       `memory-mcp-ce enrichment: starting cron ` +
       `(model: ${this.cfg.enrichmentModel}, endpoint: ${this.cfg.enrichmentEndpoint})`,
     );
-    this.schedule(INTERVAL_LOW_MS); // start slow, speed up once we know the backlog
+    this.schedule(60_000); // 60s warmup after gateway start, then adaptive
   }
 
   stop(): void {
@@ -271,8 +272,8 @@ export class EnrichmentCron {
           // Replace nonce with real labels
           await this.mcp.callTool("replace_labels", {
             memory_id: memId,
-            target_label: this.nonce,
-            new_labels: labels,
+            target: this.nonce,
+            new: labels,
           });
           return labels;
         }
