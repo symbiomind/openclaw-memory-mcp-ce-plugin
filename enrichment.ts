@@ -137,7 +137,7 @@ function parseLabels(raw: string): string | null {
     .split(/[,\s]+/)
     .map(t => t.replace(/[!.]/g, "").toLowerCase().trim())
     .filter(t => /^[a-z][a-z0-9-]{2,}$/.test(t))
-    .slice(0, 6);
+    ;
 
   if (tokens.length < 4) return null;
 
