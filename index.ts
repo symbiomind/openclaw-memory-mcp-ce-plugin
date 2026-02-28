@@ -1,5 +1,5 @@
 /**
- * openclaw-memory-mcp-ce-plugin  v0.7.4
+ * openclaw-memory-mcp-ce-plugin  v0.7.5
  *
  * OpenClaw memory slot plugin backed by memory-mcp-ce.
  * Replaces flat-file markdown memory with persistent semantic memory:
@@ -844,7 +844,7 @@ const plugin = {
 
     const client = new McpCeClient(cfg.serverUrl, cfg.bearerToken || undefined);
     api.logger.info(
-      `memory-mcp-ce v0.7.4: loaded (server: ${cfg.serverUrl}, ` +
+      `memory-mcp-ce v0.7.5: loaded (server: ${cfg.serverUrl}, ` +
       `recall: top-${cfg.autoRecallNumResults} above ${Math.round(cfg.minSimilarity * 100)}%, ` +
       `channels: [${cfg.allowedChannels.join(",")}])`,
     );
@@ -1110,7 +1110,9 @@ const plugin = {
         if (!isAllowedSession(sessionKey, agentId, cfg)) return;
 
         const source = deriveSource(sessionKey);
-        await storeNewPairs(sessionKey, agentId, event.messages, source, cfg, client, api.logger);
+        const stored = await storeNewPairs(sessionKey, agentId, event.messages, source, cfg, client, api.logger);
+        // Nudge enrichment cron — new memory just landed, process it soon
+        if (stored > 0) enrichmentCron?.nudge();
       });
     }
 
@@ -1165,7 +1167,7 @@ const plugin = {
       start: async (ctx) => {
         stateDir = ctx.stateDir;
         api.logger.info(
-          `memory-mcp-ce v0.7.4: service starting (stateDir: ${stateDir})`,
+          `memory-mcp-ce v0.7.5: service starting (stateDir: ${stateDir})`,
         );
         try {
           await client.init();

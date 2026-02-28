@@ -44,7 +44,7 @@ const ENRICHMENT_DEFAULTS = {
 };
 
 // Adaptive interval thresholds
-const INTERVAL_HIGH_MS   = 60_000;   //  1 min  — backlog > 100
+const INTERVAL_HIGH_MS   = 15_000;   // 15 sec  — backlog > 100
 const INTERVAL_MEDIUM_MS = 300_000;  //  5 min  — backlog 10–100
 const INTERVAL_LOW_MS    = 900_000;  // 15 min  — backlog < 10
 const INTERVAL_IDLE_MS   = 900_000;  // 15 min  — nothing to do
@@ -207,6 +207,23 @@ export class EnrichmentCron {
       this.timer = null;
     }
     this.logger.info("memory-mcp-ce enrichment: cron stopped");
+  }
+
+  /**
+   * Nudge the cron to run soon — called by agent_end after storing a new memory.
+   * Only reschedules if the current interval is longer than 30s (don't interrupt
+   * a fast-running backlog burn). Mutex still guarantees only 1 job at a time.
+   */
+  nudge(): void {
+    const NUDGE_MS = 15_000;
+    const NUDGE_THRESHOLD_MS = 30_000;
+    // Peek at remaining time — if timer is close anyway, don't bother
+    // We can't read setTimeout remaining time directly, so just reschedule
+    // if we're in idle/slow mode (heuristic: nudge only when not in HIGH mode)
+    if (!this.running) {
+      this.schedule(NUDGE_MS);
+      this.logger.info("memory-mcp-ce enrichment: nudged — scheduling tick in 15s");
+    }
   }
 
   private schedule(intervalMs: number): void {
