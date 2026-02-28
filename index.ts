@@ -1,5 +1,5 @@
 /**
- * openclaw-memory-mcp-ce-plugin  v0.6.0
+ * openclaw-memory-mcp-ce-plugin  v0.6.1
  *
  * OpenClaw memory slot plugin backed by memory-mcp-ce.
  * Replaces flat-file markdown memory with persistent semantic memory:
@@ -7,6 +7,13 @@
  *   - Auto-recall:  relevant memories injected before each agent turn (with dedup)
  *   - Tools:        memory_search, memory_get exposed to the agent
  *
+ *
+
+ * v0.6.1 changes:
+ *   - FIX: Last-session recency block now renders in chronological order
+ *     (oldest first, newest last). API returns newest-first; reversing before
+ *     format means the agent reads the arc naturally — ending on the most
+ *     recent exchange, not the furthest back.
  *
  * v0.6.0 changes:
  *   - NEW: Level 2 first-turn wake-up recency injection
@@ -803,7 +810,7 @@ const plugin = {
 
     const client = new McpCeClient(cfg.serverUrl, cfg.bearerToken || undefined);
     api.logger.info(
-      `memory-mcp-ce v0.6.0: loaded (server: ${cfg.serverUrl}, ` +
+      `memory-mcp-ce v0.6.1: loaded (server: ${cfg.serverUrl}, ` +
       `recall: top-${cfg.autoRecallNumResults} above ${Math.round(cfg.minSimilarity * 100)}%, ` +
       `channels: [${cfg.allowedChannels.join(",")}])`,
     );
@@ -990,7 +997,7 @@ const plugin = {
               // Mark recency memories as seen so L1 doesn't re-inject them
               for (const m of recent) seen.add(m.id);
               await saveSeenIdsToDisk(agentId, seen);
-              const formatted = recent.map(formatMemoryRecency).join("\n\n");
+              const formatted = [...recent].reverse().map(formatMemoryRecency).join("\n\n");
               recencyBlock =
                 `<last-session>\n` +
                 `The following exchanges are from your most recent session. ` +
@@ -1110,7 +1117,7 @@ const plugin = {
       start: async (ctx) => {
         stateDir = ctx.stateDir;
         api.logger.info(
-          `memory-mcp-ce v0.6.0: service starting (stateDir: ${stateDir})`,
+          `memory-mcp-ce v0.6.1: service starting (stateDir: ${stateDir})`,
         );
         try {
           await client.init();
