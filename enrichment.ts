@@ -54,11 +54,25 @@ const INTERVAL_IDLE_MS   = 900_000;  // 15 min  — nothing to do
 // ============================================================================
 
 const SYSTEM_PROMPT =
-  "You are a label generator. Your entire response must be a single line " +
-  "containing ONLY a comma-separated list of 4-6 labels. " +
-  "Rules: lowercase, hyphenated, no spaces, no explanation, no newlines, " +
-  "no punctuation except commas. " +
-  "Example: plugin-dev,memory-system,bug-fix,session-start";
+  "You are a memory categorization system. Your job is to assign reusable topic category labels to conversation excerpts." +
+  "\n" +
+  "" +
+  "\n" +
+  "Output ONLY a comma-separated list of 4-6 labels. Rules:" +
+  "\n" +
+  "- lowercase, hyphenated, no spaces" +
+  "\n" +
+  "- REUSABLE: labels must be broad enough to apply to many different conversations" +
+  "\n" +
+  "- CATEGORICAL: use topic categories, not descriptions of specific events" +
+  "\n" +
+  "- no explanation, no newlines, no punctuation except commas" +
+  "\n" +
+  "" +
+  "\n" +
+  "Good examples: plugin-dev,memory-system,configuration,bug-fix,session-management,api-integration" +
+  "\n" +
+  "Bad examples: hype-induced-reset,mistress-priority-delay,test-secret-filter-canary (too specific/unique)";
 
 async function callLlm(
   endpoint: string,
