@@ -1145,7 +1145,7 @@ const plugin = {
               if (fresh.length > 0) {
                 for (const m of fresh) seen.add(m.id);
                 await saveSeenIdsToDisk(agentId, seen);
-                const formatted = fresh.map(formatMemory).join("\n\n");
+                const formatted = fresh.map(formatMemoryRecency).join("\n\n");
                 api.logger.info(
                   `memory-mcp-ce: injecting ${fresh.length} trending memories for agent ${agentId} (L3 wake-up, tokens: ${tokens.join(",")})`,
                 );
