@@ -1,6 +1,6 @@
 {
   "name": "memory-mcp-ce",
-  "version": "0.5.4",
+  "version": "0.6.0",
   "description": "OpenClaw memory plugin backed by memory-mcp-ce \u2014 persistent semantic memory with auto-capture and auto-recall",
   "license": "AGPL-3.0",
   "type": "module",

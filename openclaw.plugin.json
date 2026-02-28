@@ -28,7 +28,7 @@
     },
     "minSimilarity": {
       "label": "Min Similarity Threshold",
-      "help": "Minimum similarity score (0–1) for auto-recall injection. Default: 0.60",
+      "help": "Minimum similarity score (0\u20131) for auto-recall injection. Default: 0.60",
       "advanced": true,
       "placeholder": "0.60"
     },
@@ -46,7 +46,7 @@
     },
     "noReplyTokens": {
       "label": "No-Reply Tokens",
-      "help": "Agent responses that mean 'nothing to say' — skip storing these. Default: [\"NO_REPLY\",\"HEARTBEAT_OK\"].",
+      "help": "Agent responses that mean 'nothing to say' \u2014 skip storing these. Default: [\"NO_REPLY\",\"HEARTBEAT_OK\"].",
       "advanced": true
     },
     "minResponseChars": {
@@ -54,12 +54,25 @@
       "help": "Skip storing pairs where the agent response is shorter than this. Default: 80.",
       "advanced": true,
       "placeholder": "80"
+    },
+    "wakeupRecency": {
+      "label": "Wake-up Recency Injection",
+      "help": "On new sessions, inject the last N stored memories as <last-session> context before semantic recall. Default: false.",
+      "advanced": true
+    },
+    "wakeupRecencyCount": {
+      "label": "Wake-up Recency Count",
+      "help": "Number of recent memories to inject on session wake-up (wakeupRecency must be true). Default: 5.",
+      "advanced": true,
+      "placeholder": "5"
     }
   },
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
-    "required": ["serverUrl"],
+    "required": [
+      "serverUrl"
+    ],
     "properties": {
       "serverUrl": {
         "type": "string"
@@ -85,19 +98,33 @@
       },
       "allowedChannels": {
         "type": "array",
-        "items": { "type": "string" }
+        "items": {
+          "type": "string"
+        }
       },
       "excludeAgents": {
         "type": "array",
-        "items": { "type": "string" }
+        "items": {
+          "type": "string"
+        }
       },
       "noReplyTokens": {
         "type": "array",
-        "items": { "type": "string" }
+        "items": {
+          "type": "string"
+        }
       },
       "minResponseChars": {
         "type": "number",
         "minimum": 0
+      },
+      "wakeupRecency": {
+        "type": "boolean"
+      },
+      "wakeupRecencyCount": {
+        "type": "number",
+        "minimum": 1,
+        "maximum": 20
       }
     }
   }
