@@ -1,5 +1,5 @@
 /**
- * openclaw-memory-mcp-ce-plugin  v0.6.1
+ * openclaw-memory-mcp-ce-plugin  v0.7.0
  *
  * OpenClaw memory slot plugin backed by memory-mcp-ce.
  * Replaces flat-file markdown memory with persistent semantic memory:
@@ -9,6 +9,17 @@
  *
  *
 
+
+ * v0.7.0 changes:
+ *   - NEW: Level 3 label enrichment cron (enrichment.ts)
+ *     Background service that processes unprocessed memories (nonce label)
+ *     via a tiny LLM (any OpenAI-compatible endpoint). Validates output
+ *     (4-6 clean labels), retries once on bad format, then calls replace_labels
+ *     to swap nonce → real semantic labels. Mutex prevents cascade stacking
+ *     when LLM is slow. Adaptive interval: 1min (backlog >100) → 15min (idle).
+ *     Config: enrichmentEnabled, enrichmentEndpoint, enrichmentModel,
+ *             enrichmentApiKey, enrichmentBatchSize, enrichmentTimeoutMs
+ *
  * v0.6.1 changes:
  *   - FIX: Last-session recency block now renders in chronological order
  *     (oldest first, newest last). API returns newest-first; reversing before
@@ -131,6 +142,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Type } from "@sinclair/typebox";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
+import { EnrichmentCron, type EnrichmentConfig } from "./enrichment.js";
 
 // ============================================================================
 // Config
@@ -149,6 +161,13 @@ interface PluginConfig {
   minResponseChars?: number;
   wakeupRecency?: boolean;
   wakeupRecencyCount?: number;
+  enrichmentEnabled?: boolean;
+  enrichmentEndpoint?: string;
+  enrichmentModel?: string;
+  enrichmentApiKey?: string;
+  enrichmentNonce?: string;
+  enrichmentTimeoutMs?: number;
+  enrichmentBatchSize?: number;
 }
 
 const DEFAULTS = {
@@ -162,6 +181,7 @@ const DEFAULTS = {
   minResponseChars: 80,
   wakeupRecency: false,
   wakeupRecencyCount: 5,
+  enrichmentEnabled: false,
 };
 
 function deriveSource(sessionKey: unknown): string {
@@ -495,6 +515,13 @@ interface ResolvedConfig {
   minResponseChars: number;
   wakeupRecency: boolean;
   wakeupRecencyCount: number;
+  enrichmentEnabled: boolean;
+  enrichmentEndpoint?: string;
+  enrichmentModel?: string;
+  enrichmentApiKey?: string;
+  enrichmentNonce?: string;
+  enrichmentTimeoutMs?: number;
+  enrichmentBatchSize?: number;
 }
 
 /**
@@ -806,11 +833,18 @@ const plugin = {
       minResponseChars: raw.minResponseChars ?? DEFAULTS.minResponseChars,
       wakeupRecency: raw.wakeupRecency ?? DEFAULTS.wakeupRecency,
       wakeupRecencyCount: raw.wakeupRecencyCount ?? DEFAULTS.wakeupRecencyCount,
+      enrichmentEnabled: raw.enrichmentEnabled ?? DEFAULTS.enrichmentEnabled,
+      enrichmentEndpoint: raw.enrichmentEndpoint,
+      enrichmentModel: raw.enrichmentModel,
+      enrichmentApiKey: raw.enrichmentApiKey,
+      enrichmentNonce: raw.enrichmentNonce,
+      enrichmentTimeoutMs: raw.enrichmentTimeoutMs,
+      enrichmentBatchSize: raw.enrichmentBatchSize,
     };
 
     const client = new McpCeClient(cfg.serverUrl, cfg.bearerToken || undefined);
     api.logger.info(
-      `memory-mcp-ce v0.6.1: loaded (server: ${cfg.serverUrl}, ` +
+      `memory-mcp-ce v0.7.0: loaded (server: ${cfg.serverUrl}, ` +
       `recall: top-${cfg.autoRecallNumResults} above ${Math.round(cfg.minSimilarity * 100)}%, ` +
       `channels: [${cfg.allowedChannels.join(",")}])`,
     );
@@ -1112,12 +1146,26 @@ const plugin = {
     // Background service
     // ========================================================================
 
+    // Enrichment cron (L3) — instantiated here, started in service.start
+    let enrichmentCron: EnrichmentCron | null = null;
+    if (cfg.enrichmentEnabled && cfg.enrichmentEndpoint && cfg.enrichmentModel) {
+      const enrichCfg: EnrichmentConfig = {
+        enrichmentEndpoint: cfg.enrichmentEndpoint,
+        enrichmentModel: cfg.enrichmentModel,
+        enrichmentApiKey: cfg.enrichmentApiKey,
+        enrichmentNonce: cfg.enrichmentNonce,
+        enrichmentTimeoutMs: cfg.enrichmentTimeoutMs,
+        enrichmentBatchSize: cfg.enrichmentBatchSize,
+      };
+      enrichmentCron = new EnrichmentCron(enrichCfg, client, api.logger);
+    }
+
     api.registerService({
       id: "memory-mcp-ce",
       start: async (ctx) => {
         stateDir = ctx.stateDir;
         api.logger.info(
-          `memory-mcp-ce v0.6.1: service starting (stateDir: ${stateDir})`,
+          `memory-mcp-ce v0.7.0: service starting (stateDir: ${stateDir})`,
         );
         try {
           await client.init();
@@ -1127,8 +1175,10 @@ const plugin = {
             `memory-mcp-ce: session init failed (will retry on first call): ${String(err)}`,
           );
         }
+        enrichmentCron?.start();
       },
       stop: async () => {
+        enrichmentCron?.stop();
         api.logger.info("memory-mcp-ce: service stopped");
       },
     });

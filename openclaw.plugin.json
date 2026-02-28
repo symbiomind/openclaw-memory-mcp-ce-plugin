@@ -65,6 +65,41 @@
       "help": "Number of recent memories to inject on session wake-up (wakeupRecency must be true). Default: 5.",
       "advanced": true,
       "placeholder": "5"
+    },
+    "enrichmentEnabled": {
+      "label": "Enrichment Cron (L3)",
+      "help": "Enable background label enrichment via a tiny LLM. Requires enrichmentEndpoint and enrichmentModel.",
+      "advanced": true
+    },
+    "enrichmentEndpoint": {
+      "label": "Enrichment LLM Endpoint",
+      "help": "Base URL of OpenAI-compatible LLM (e.g. http://localhost:11434 for Ollama).",
+      "advanced": true,
+      "placeholder": "http://localhost:11434"
+    },
+    "enrichmentModel": {
+      "label": "Enrichment Model",
+      "help": "Model name for label generation (e.g. ministral-3:3b).",
+      "advanced": true,
+      "placeholder": "ministral-3:3b"
+    },
+    "enrichmentApiKey": {
+      "label": "Enrichment API Key",
+      "sensitive": true,
+      "help": "Bearer token for LLM endpoint (optional, leave empty for local Ollama).",
+      "advanced": true
+    },
+    "enrichmentBatchSize": {
+      "label": "Enrichment Batch Size",
+      "help": "Memories to process per cron tick (default: 1, increase for capable hardware).",
+      "advanced": true,
+      "placeholder": "1"
+    },
+    "enrichmentTimeoutMs": {
+      "label": "Enrichment Timeout (ms)",
+      "help": "LLM request timeout in milliseconds (default: 120000).",
+      "advanced": true,
+      "placeholder": "120000"
     }
   },
   "configSchema": {
@@ -125,6 +160,30 @@
         "type": "number",
         "minimum": 1,
         "maximum": 20
+      },
+      "enrichmentEnabled": {
+        "type": "boolean"
+      },
+      "enrichmentEndpoint": {
+        "type": "string"
+      },
+      "enrichmentModel": {
+        "type": "string"
+      },
+      "enrichmentApiKey": {
+        "type": "string"
+      },
+      "enrichmentNonce": {
+        "type": "string"
+      },
+      "enrichmentTimeoutMs": {
+        "type": "number",
+        "minimum": 1000
+      },
+      "enrichmentBatchSize": {
+        "type": "number",
+        "minimum": 1,
+        "maximum": 10
       }
     }
   }
