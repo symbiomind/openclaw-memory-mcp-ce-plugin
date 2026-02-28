@@ -145,6 +145,30 @@ function parseLabels(raw: string): string | null {
 }
 
 // ============================================================================
+// Global singleton guard — prevents two cron instances when OpenClaw loads
+// the plugin twice (once for gateway subsystem, once for plugins subsystem)
+// ============================================================================
+
+let _globalInstance: EnrichmentCron | null = null;
+
+export function getOrCreateEnrichmentCron(
+  cfg: EnrichmentConfig,
+  mcp: McpClient,
+  logger: Logger,
+): EnrichmentCron {
+  if (_globalInstance) {
+    logger.info("memory-mcp-ce enrichment: singleton already running — skipping second instance");
+    return _globalInstance;
+  }
+  _globalInstance = new EnrichmentCron(cfg, mcp, logger);
+  return _globalInstance;
+}
+
+export function clearEnrichmentSingleton(): void {
+  _globalInstance = null;
+}
+
+// ============================================================================
 // EnrichmentCron
 // ============================================================================
 

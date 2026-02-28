@@ -1,5 +1,5 @@
 /**
- * openclaw-memory-mcp-ce-plugin  v0.7.5
+ * openclaw-memory-mcp-ce-plugin  v0.7.6
  *
  * OpenClaw memory slot plugin backed by memory-mcp-ce.
  * Replaces flat-file markdown memory with persistent semantic memory:
@@ -142,7 +142,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Type } from "@sinclair/typebox";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
-import { EnrichmentCron, type EnrichmentConfig } from "./enrichment.js";
+import { getOrCreateEnrichmentCron, clearEnrichmentSingleton, type EnrichmentConfig } from "./enrichment.js";
 
 // ============================================================================
 // Config
@@ -844,7 +844,7 @@ const plugin = {
 
     const client = new McpCeClient(cfg.serverUrl, cfg.bearerToken || undefined);
     api.logger.info(
-      `memory-mcp-ce v0.7.5: loaded (server: ${cfg.serverUrl}, ` +
+      `memory-mcp-ce v0.7.6: loaded (server: ${cfg.serverUrl}, ` +
       `recall: top-${cfg.autoRecallNumResults} above ${Math.round(cfg.minSimilarity * 100)}%, ` +
       `channels: [${cfg.allowedChannels.join(",")}])`,
     );
@@ -1159,7 +1159,7 @@ const plugin = {
         enrichmentTimeoutMs: cfg.enrichmentTimeoutMs,
         enrichmentBatchSize: cfg.enrichmentBatchSize,
       };
-      enrichmentCron = new EnrichmentCron(enrichCfg, client, api.logger);
+      enrichmentCron = getOrCreateEnrichmentCron(enrichCfg, client, api.logger);
     }
 
     api.registerService({
@@ -1167,7 +1167,7 @@ const plugin = {
       start: async (ctx) => {
         stateDir = ctx.stateDir;
         api.logger.info(
-          `memory-mcp-ce v0.7.5: service starting (stateDir: ${stateDir})`,
+          `memory-mcp-ce v0.7.6: service starting (stateDir: ${stateDir})`,
         );
         try {
           await client.init();
@@ -1181,6 +1181,7 @@ const plugin = {
       },
       stop: async () => {
         enrichmentCron?.stop();
+        clearEnrichmentSingleton();
         api.logger.info("memory-mcp-ce: service stopped");
       },
     });
