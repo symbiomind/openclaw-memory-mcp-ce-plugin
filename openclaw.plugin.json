@@ -66,6 +66,23 @@
       "advanced": true,
       "placeholder": "5"
     },
+    "wakeupTrending": {
+      "label": "Wake-up Trending Injection",
+      "help": "On new sessions, fetch trending topics and inject matching memories as <wakeup-context> before semantic recall (L3 wake-up). Default: false.",
+      "advanced": true
+    },
+    "wakeupTrendingDays": {
+      "label": "Wake-up Trending Days",
+      "help": "Number of days to look back for trending topics. Default: 7.",
+      "advanced": true,
+      "placeholder": "7"
+    },
+    "wakeupTrendingLimit": {
+      "label": "Wake-up Trending Limit",
+      "help": "Number of trending labels to fetch. Default: 10.",
+      "advanced": true,
+      "placeholder": "10"
+    },
     "enrichmentEnabled": {
       "label": "Enrichment Cron (L3)",
       "help": "Enable background label enrichment via a tiny LLM. Requires enrichmentEndpoint and enrichmentModel.",
@@ -160,6 +177,19 @@
         "type": "number",
         "minimum": 1,
         "maximum": 20
+      },
+      "wakeupTrending": {
+        "type": "boolean"
+      },
+      "wakeupTrendingDays": {
+        "type": "number",
+        "minimum": 1,
+        "maximum": 90
+      },
+      "wakeupTrendingLimit": {
+        "type": "number",
+        "minimum": 1,
+        "maximum": 50
       },
       "enrichmentEnabled": {
         "type": "boolean"
