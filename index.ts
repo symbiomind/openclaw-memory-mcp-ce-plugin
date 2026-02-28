@@ -1133,7 +1133,9 @@ const plugin = {
           agentNeedsTrending.delete(agentId);
           try {
             const tokens = await client.trendingLabels(cfg.wakeupTrendingDays, cfg.wakeupTrendingLimit);
-            if (tokens.length > 0) {
+            if (tokens.length === 0) {
+              api.logger.info(`memory-mcp-ce: L3 trending — no tokens available (enrichment may be disabled or backlog all-nonce), skipping`);
+            } else {
               const labelsQuery = tokens.join(", ");
               const trending = await client.retrieveMemoriesStructured(
                 undefined,
@@ -1160,6 +1162,7 @@ const plugin = {
                   `memory-mcp-ce: L3 trending — all ${trending.length} results already seen for agent ${agentId}`,
                 );
               }
+            }
             }
           } catch (err) {
             api.logger.warn(`memory-mcp-ce: L3 trending wake-up failed: ${String(err)}`);
