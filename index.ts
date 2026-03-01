@@ -176,6 +176,7 @@ interface PluginConfig {
   wakeupTrending?: boolean;
   wakeupTrendingDays?: number;
   wakeupTrendingLimit?: number;
+  wakeupTrendingCount?: number;
   enrichmentEnabled?: boolean;
   enrichmentEndpoint?: string;
   enrichmentModel?: string;
@@ -199,6 +200,7 @@ const DEFAULTS = {
   wakeupTrending: false,
   wakeupTrendingDays: 7,
   wakeupTrendingLimit: 10,
+  wakeupTrendingCount: 5,
   enrichmentEnabled: false,
 };
 
@@ -548,6 +550,7 @@ interface ResolvedConfig {
   wakeupTrending: boolean;
   wakeupTrendingDays: number;
   wakeupTrendingLimit: number;
+  wakeupTrendingCount: number;
   enrichmentEnabled: boolean;
   enrichmentEndpoint?: string;
   enrichmentModel?: string;
@@ -870,6 +873,7 @@ const plugin = {
       wakeupTrending: raw.wakeupTrending ?? DEFAULTS.wakeupTrending,
       wakeupTrendingDays: raw.wakeupTrendingDays ?? DEFAULTS.wakeupTrendingDays,
       wakeupTrendingLimit: raw.wakeupTrendingLimit ?? DEFAULTS.wakeupTrendingLimit,
+      wakeupTrendingCount: raw.wakeupTrendingCount ?? DEFAULTS.wakeupTrendingCount,
       enrichmentEnabled: raw.enrichmentEnabled ?? DEFAULTS.enrichmentEnabled,
       enrichmentEndpoint: raw.enrichmentEndpoint,
       enrichmentModel: raw.enrichmentModel,
@@ -1141,7 +1145,7 @@ const plugin = {
                 undefined,
                 labelsQuery,
                 undefined,
-                cfg.autoRecallNumResults,
+                cfg.wakeupTrendingCount,
               );
               const fresh = trending.filter((m) => !seen.has(m.id));
               if (fresh.length > 0) {

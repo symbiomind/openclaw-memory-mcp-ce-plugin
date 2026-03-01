@@ -83,6 +83,12 @@
       "advanced": true,
       "placeholder": "10"
     },
+    "wakeupTrendingCount": {
+      "label": "Wake-up Trending Count",
+      "help": "Number of trending memories to inject at wake-up. Default: 5.",
+      "advanced": true,
+      "placeholder": "5"
+    },
     "enrichmentEnabled": {
       "label": "Enrichment Cron (L3)",
       "help": "Enable background label enrichment via a tiny LLM. Requires enrichmentEndpoint and enrichmentModel.",
@@ -190,6 +196,11 @@
         "type": "number",
         "minimum": 1,
         "maximum": 50
+      },
+      "wakeupTrendingCount": {
+        "type": "number",
+        "minimum": 1,
+        "maximum": 20
       },
       "enrichmentEnabled": {
         "type": "boolean"

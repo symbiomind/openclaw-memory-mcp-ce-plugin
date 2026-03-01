@@ -203,6 +203,7 @@ That's the minimum. Everything else has sensible defaults.
 | `wakeupTrending` | `false` | Inject trending-topic memories as `<wakeup-context>` on new sessions |
 | `wakeupTrendingDays` | `7` | How many days back to look for trending topics |
 | `wakeupTrendingLimit` | `10` | Number of trending labels to fetch |
+| `wakeupTrendingCount` | `5` | Number of trending memories to inject |
 
 ### Label Enrichment Cron
 
