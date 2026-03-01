@@ -137,17 +137,7 @@
  *   - NEW: minResponseChars — skip pairs where agent response is too short
  *     (default: 80 chars — filters one-liners, acks, heartbeats)
  *
- * Config (plugins.entries.memory-mcp-ce.config):
- *   serverUrl             Base URL of memory-mcp-ce  (required, e.g. http://localhost:5005)
- *   bearerToken           BEARER_TOKEN from .env      (optional)
- *   autoCapture           Auto-store session turns    (default: true)
- *   autoRecall            Auto-inject memories        (default: true)
- *   autoRecallNumResults  How many memories to surface per turn (default: 3)
- *   minSimilarity         Minimum similarity (0–1) for auto-recall injection (default: 0.60)
- *   allowedChannels       Session channels to process (default: ["main"])
- *   excludeAgents         Agent IDs to skip entirely  (default: ["cron"])
- *   noReplyTokens         Agent responses that trigger skip (default: ["NO_REPLY","HEARTBEAT_OK"])
- *   minResponseChars      Min agent response length to store (default: 80)
+ * Config: see README.md — https://github.com/symbiomind/openclaw-memory-mcp-ce-plugin
  */
 
 import { readFile, writeFile } from "node:fs/promises";
