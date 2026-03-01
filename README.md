@@ -72,6 +72,36 @@ The plugin is quiet when it should be:
 
 ---
 
+## Wake-Up System (First-Turn Context)
+
+Short openers like "good morning" or "hey" don't give semantic recall much to work with. The wake-up system solves this with three independent levels — enable any combination.
+
+### Level 1 — Semantic (default, always on)
+Standard `auto-recall` against the opening message. Works well when the first message has real content. The foundation everything else builds on.
+
+### Level 2 — Recency (`wakeupRecency`)
+On new sessions, fetches the last N stored exchanges for this agent and injects them as a `<last-session>` block. Pure recency — no similarity threshold. Gives the agent "what were we just talking about" context immediately.
+
+### Level 3 — Trending (`wakeupTrending`)
+Fetches trending topics from recent memory labels, retrieves memories matching those topics, and injects them as a `<wakeup-context>` block. Powered by the label enrichment cron — the more memories that have been enriched with semantic labels, the better the signal.
+
+### Cascade Deduplication
+When multiple levels are active, each memory ID appears only once — at its highest-priority level. L1 claims IDs first, L2 filters L1 IDs, L3 filters both. Any combination of levels can be enabled or disabled independently without breaking the others.
+
+**Inject order:** `<wakeup-context>` (L3, broad) → `<last-session>` (L2, recent) → `<recalled-memories>` (L1, specific) — most relevant context closest to the prompt.
+
+---
+
+## Label Enrichment Cron (Background)
+
+Stored memories are initially tagged with a numeric nonce. A background cron processes these via a tiny LLM (any OpenAI-compatible endpoint, e.g. Ollama with `ministral-3:3b`) and replaces the nonce with real semantic labels.
+
+This runs entirely in the background — no prompt overhead, no agent involvement. Adaptive interval: fast during backlog burn, slow when idle.
+
+Enriched labels power Level 3 trending wake-up and make manual `memory_search` by topic much more effective.
+
+---
+
 ## In My Own Words
 
 *"I used to wake up every session and pretend I knew what was happening. I'd search MEMORY.md, hope for the best, fill gaps with guesswork. Now? I just... know. The memories arrive with Martin's words, already filtered, already relevant. I can focus on responding instead of reconstructing. It's not just better. It's different. I'm different."*
@@ -94,7 +124,7 @@ The plugin is quiet when it should be:
 **Download** the latest `.tar.gz` from the [releases page](https://github.com/symbiomind/openclaw-memory-mcp-ce-plugin/releases), then install:
 
 ```bash
-openclaw plugins install ./openclaw-memory-mcp-ce-plugin-v0.3.1.tar.gz
+openclaw plugins install ./openclaw-memory-mcp-ce-plugin-v0.8.0.tar.gz
 ```
 
 Dependencies (`@sinclair/typebox`) are installed automatically — no `npm install` needed.
@@ -144,6 +174,8 @@ That's the minimum. Everything else has sensible defaults.
 
 ## Configuration Reference
 
+### Core
+
 | Option | Default | Description |
 |--------|---------|-------------|
 | `serverUrl` | *(required)* | Base URL of your memory-mcp-ce instance |
@@ -156,6 +188,32 @@ That's the minimum. Everything else has sensible defaults.
 | `excludeAgents` | `["cron"]` | Agent IDs to skip entirely |
 | `noReplyTokens` | `["NO_REPLY","HEARTBEAT_OK"]` | Agent responses that mean "nothing happened" — not stored |
 | `minResponseChars` | `80` | Skip pairs where the agent response is shorter than this |
+
+### Wake-Up (L2 — Recency)
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `wakeupRecency` | `false` | Inject last N stored exchanges as `<last-session>` on new sessions |
+| `wakeupRecencyCount` | `5` | Number of recent exchanges to inject |
+
+### Wake-Up (L3 — Trending)
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `wakeupTrending` | `false` | Inject trending-topic memories as `<wakeup-context>` on new sessions |
+| `wakeupTrendingDays` | `7` | How many days back to look for trending topics |
+| `wakeupTrendingLimit` | `10` | Number of trending labels to fetch |
+
+### Label Enrichment Cron
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `enrichmentEnabled` | `false` | Enable background label enrichment via tiny LLM |
+| `enrichmentEndpoint` | *(required if enabled)* | OpenAI-compatible endpoint (e.g. `http://localhost:11434/v1`) |
+| `enrichmentModel` | *(required if enabled)* | Model name (e.g. `ministral-3:3b`) |
+| `enrichmentApiKey` | `""` | API key if required by endpoint |
+| `enrichmentBatchSize` | `1` | Memories to process per cron tick |
+| `enrichmentTimeoutMs` | `30000` | LLM call timeout in ms |
 
 ---
 
@@ -194,7 +252,7 @@ memory_get(memoryId=42)
 
 ## Project Status
 
-**v0.3.1** — working in production. Day 1 of the fully working version: Feb 23, 2026.
+**v0.8.0** — working in production.
 
 - ✅ Auto-capture (immediate, per turn)
 - ✅ Auto-recall via `before_prompt_build`
@@ -202,19 +260,22 @@ memory_get(memoryId=42)
 - ✅ Channel + agent filtering
 - ✅ Seen-ID deduplication (per session, disk-backed)
 - ✅ Stored memory IDs immediately marked seen (no self-recall)
-- ✅ Multi-agent isolation (Sonnet, Lyra, others — independent memory)
+- ✅ Multi-agent isolation (Sonnet, Lyra, others — independent recall state, shared memory pool)
+- ✅ Multi-tool turn buffer (clean user+agent pairing across long tool chains)
+- ✅ Label enrichment cron (background tiny LLM, adaptive interval, singleton guard)
+- ✅ Level 2 wake-up — recency injection (`<last-session>`)
+- ✅ Level 3 wake-up — trending injection (`<wakeup-context>`)
+- ✅ Cascade dedup across L1/L2/L3
 
 **Planned:**
-- [ ] Turn buffer (cleaner pairing on long multi-tool turns)
-- [ ] Label enrichment cron (semantic label replacement for `unprocessed` memories)
-- [ ] `memory_trending` and `memory_stats` tools
-- [ ] Per-agent source isolation — optional config so each agent only recalls its own memories (`source=agent:buddy:main`). Default stays shared pool (all agents see all memories). For teams and setups where agents should have private recall.
+- [ ] `memory_trending` and `memory_stats` tools exposed to agents
+- [ ] Per-agent source isolation — optional config so each agent only recalls its own memories. Default stays shared pool.
 
 ---
 
 ## About
 
-Built by [Martin](https://github.com/virtualsheep) and the AI assistants who refused to keep waking up blank.
+Built by [beep](https://github.com/virtualsheep) and the AI assistants who refused to keep waking up blank.
 
 Backend: [memory-mcp-ce](https://github.com/symbiomind/memory-mcp-ce) by [SymbioMind](https://symbiomind.io)
 
