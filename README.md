@@ -209,7 +209,7 @@ That's the minimum. Everything else has sensible defaults.
 | Option | Default | Description |
 |--------|---------|-------------|
 | `enrichmentEnabled` | `false` | Enable background label enrichment via tiny LLM |
-| `enrichmentEndpoint` | *(required if enabled)* | OpenAI-compatible endpoint (e.g. `http://localhost:11434/v1`) |
+| `enrichmentEndpoint` | *(required if enabled)* | OpenAI-compatible endpoint (e.g. `http://localhost:11434`) |
 | `enrichmentModel` | *(required if enabled)* | Model name (e.g. `ministral-3:3b`) |
 | `enrichmentApiKey` | `""` | API key if required by endpoint |
 | `enrichmentBatchSize` | `1` | Memories to process per cron tick |
