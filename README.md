@@ -245,7 +245,7 @@ memory_get(memoryId=42)
 | Markdown files, git-tracked | PostgreSQL + pgvector |
 | Context shrinks on compaction | Everything stored, nothing lost |
 | Model must remember to store | Infrastructure auto-stores every turn |
-| Text search only | Semantic search (meaning, not keywords) |
+| Semantic search optional, requires external API config | Semantic search built-in, always on |
 | One agent | Multi-agent — shared memory pool, independent recall state per agent |
 | Gets noisy over time | Similarity threshold keeps injection clean |
 
