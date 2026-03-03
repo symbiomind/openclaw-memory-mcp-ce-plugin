@@ -1,5 +1,5 @@
 /**
- * openclaw-memory-mcp-ce-plugin  v0.8.1
+ * openclaw-memory-mcp-ce-plugin  v0.9.0
  *
  * OpenClaw memory slot plugin backed by memory-mcp-ce.
  * Replaces flat-file markdown memory with persistent semantic memory:
@@ -10,6 +10,14 @@
  *
 
 
+ * v0.9.0 changes:
+ *   - NEW: recallSourceInclude / recallSourceExclude config options for L1 recall.
+ *     Both default to "" (no filter — existing behaviour preserved).
+ *     Include: comma-separated source prefixes to allow (e.g. "agent:,podcast").
+ *     Exclude: comma-separated source prefixes to block (e.g. "project:,agentic:").
+ *     Filters are combined and forwarded to the backend source filter (supports ! prefix).
+ *     L2 (recency) and L3 (trending) are unaffected — only L1 semantic recall is filtered.
+ *
  * v0.8.0 changes:
  *   - NEW: Level 3 trending wake-up injection
  *     On new sessions, fetch trending_labels (configurable days/limit window),
@@ -174,6 +182,8 @@ interface PluginConfig {
   enrichmentNonce?: string;
   enrichmentTimeoutMs?: number;
   enrichmentBatchSize?: number;
+  recallSourceInclude?: string;
+  recallSourceExclude?: string;
 }
 
 const DEFAULTS = {
@@ -192,7 +202,34 @@ const DEFAULTS = {
   wakeupTrendingLimit: 10,
   wakeupTrendingCount: 5,
   enrichmentEnabled: false,
+  recallSourceInclude: "",
+  recallSourceExclude: "",
 };
+
+/**
+ * Build a source filter string for L1 recall from include/exclude config.
+ * Include entries are passed as-is; exclude entries are prefixed with "!".
+ * Empty string = no filter (recall from all sources).
+ *
+ * Examples:
+ *   include="agent:,podcast"  exclude=""         → "agent:,podcast"
+ *   include=""                exclude="project:" → "!project:"
+ *   include="agent:"          exclude="agentic:" → "agent:,!agentic:"
+ *   include=""                exclude=""         → undefined (no filter)
+ */
+function buildRecallSourceFilter(include: string, exclude: string): string | undefined {
+  const parts: string[] = [];
+  if (include.trim()) {
+    parts.push(...include.split(",").map((s) => s.trim()).filter(Boolean));
+  }
+  if (exclude.trim()) {
+    parts.push(...exclude.split(",").map((s) => {
+      const t = s.trim();
+      return t.startsWith("!") ? t : `!${t}`;
+    }).filter(Boolean));
+  }
+  return parts.length > 0 ? parts.join(",") : undefined;
+}
 
 function deriveSource(sessionKey: unknown): string {
   if (typeof sessionKey === "string" && sessionKey.trim()) {
@@ -554,6 +591,8 @@ interface ResolvedConfig {
   enrichmentNonce?: string;
   enrichmentTimeoutMs?: number;
   enrichmentBatchSize?: number;
+  recallSourceInclude: string;
+  recallSourceExclude: string;
 }
 
 /**
@@ -877,11 +916,13 @@ const plugin = {
       enrichmentNonce: raw.enrichmentNonce,
       enrichmentTimeoutMs: raw.enrichmentTimeoutMs,
       enrichmentBatchSize: raw.enrichmentBatchSize,
+      recallSourceInclude: raw.recallSourceInclude ?? DEFAULTS.recallSourceInclude,
+      recallSourceExclude: raw.recallSourceExclude ?? DEFAULTS.recallSourceExclude,
     };
 
     const client = new McpCeClient(cfg.serverUrl, cfg.bearerToken || undefined);
     api.logger.info(
-      `memory-mcp-ce v0.8.1: loaded (server: ${cfg.serverUrl}, ` +
+      `memory-mcp-ce v0.9.0: loaded (server: ${cfg.serverUrl}, ` +
       `recall: top-${cfg.autoRecallNumResults} above ${Math.round(cfg.minSimilarity * 100)}%, ` +
       `channels: [${cfg.allowedChannels.join(",")}])`,
     );
@@ -1060,10 +1101,11 @@ const plugin = {
         // L1 claims IDs first so L2/L3 never re-inject the same memory.
         let l1Block = "";
         try {
+          const l1Source = buildRecallSourceFilter(cfg.recallSourceInclude, cfg.recallSourceExclude);
           const all = await client.retrieveMemoriesStructured(
             prompt,
             undefined,
-            undefined,
+            l1Source,
             cfg.autoRecallNumResults,
           );
 
@@ -1248,7 +1290,7 @@ const plugin = {
       start: async (ctx) => {
         stateDir = ctx.stateDir;
         api.logger.info(
-          `memory-mcp-ce v0.8.1: service starting (stateDir: ${stateDir})`,
+          `memory-mcp-ce v0.9.0: service starting (stateDir: ${stateDir})`,
         );
         try {
           await client.init();

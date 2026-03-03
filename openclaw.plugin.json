@@ -123,6 +123,18 @@
       "help": "LLM request timeout in milliseconds (default: 120000).",
       "advanced": true,
       "placeholder": "120000"
+    },
+    "recallSourceInclude": {
+      "label": "Recall Source Include",
+      "help": "Comma-separated source prefixes to allow in L1 recall (e.g. \"agent:,podcast\"). Empty = no filter (all sources recalled).",
+      "advanced": true,
+      "placeholder": ""
+    },
+    "recallSourceExclude": {
+      "label": "Recall Source Exclude",
+      "help": "Comma-separated source prefixes to block from L1 recall (e.g. \"project:,agentic:\"). Empty = no exclusions.",
+      "advanced": true,
+      "placeholder": ""
     }
   },
   "configSchema": {
@@ -225,6 +237,12 @@
         "type": "number",
         "minimum": 1,
         "maximum": 10
+      },
+      "recallSourceInclude": {
+        "type": "string"
+      },
+      "recallSourceExclude": {
+        "type": "string"
       }
     }
   }
