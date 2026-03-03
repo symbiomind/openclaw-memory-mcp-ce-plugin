@@ -124,7 +124,7 @@ Enriched labels power Level 3 trending wake-up and make manual `memory_search` b
 **Download** the latest `.tar.gz` from the [releases page](https://github.com/symbiomind/openclaw-memory-mcp-ce-plugin/releases), then install:
 
 ```bash
-openclaw plugins install ./openclaw-memory-mcp-ce-plugin-v0.8.0.tar.gz
+openclaw plugins install ./openclaw-memory-mcp-ce-plugin-v0.9.1.tar.gz
 ```
 
 Dependencies (`@sinclair/typebox`) are installed automatically — no `npm install` needed.
@@ -205,6 +205,15 @@ That's the minimum. Everything else has sensible defaults.
 | `wakeupTrendingLimit` | `10` | Number of trending labels to fetch |
 | `wakeupTrendingCount` | `5` | Number of trending memories to inject |
 
+### Recall Source Filtering
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `recallSourceInclude` | `""` | Only recall memories from these source prefixes (e.g. `"agent:,podcast"`). Empty = no filter. |
+| `recallSourceExclude` | `""` | Block memories from these source prefixes (e.g. `"project:"`). Empty = no exclusions. |
+
+Filters apply to L1 semantic recall and L3 trending wakeup. L2 recency is already locked to the current agent's source.
+
 ### Label Enrichment Cron
 
 | Option | Default | Description |
@@ -215,6 +224,61 @@ That's the minimum. Everything else has sensible defaults.
 | `enrichmentApiKey` | `""` | API key if required by endpoint |
 | `enrichmentBatchSize` | `1` | Memories to process per cron tick |
 | `enrichmentTimeoutMs` | `30000` | LLM call timeout in ms |
+
+---
+
+## Beyond Conversations: Using Memory as a Project Database
+
+The plugin handles conversational memory automatically — set and forget. But the same backend can store *anything*: project notes, reference data, task lists, transcripts, research.
+
+**The separation mechanism is `source` tagging.** The plugin writes all conversational memories with source `agent:sonnet:main` (or equivalent for your agent). Anything you store via mcporter can use whatever source makes sense for you.
+
+```bash
+# Store a project memory manually
+mcporter call plugin-memory.store_memory \
+  content="Database: host=db.example.com, name=banana_cows, user=admin" \
+  source="project:banana-cows" \
+  labels="database,config,banana-cows"
+```
+
+Then your agent can reach for it intentionally:
+
+> *"Hey, grab the database details from our banana-cows project"*
+
+The agent uses mcporter to query by source:
+
+```bash
+mcporter call plugin-memory.retrieve_memories \
+  query="database connection details" \
+  source="project:banana-cows"
+```
+
+### Two modes, one backend
+
+| Mode | How | Source pattern | Auto-recalled? |
+|------|-----|---------------|----------------|
+| **Conversational** | Plugin auto-stores every turn | `agent:*` | Yes — semantic recall every turn |
+| **Project/database** | You store via mcporter | `project:*` (your choice) | No — retrieved on demand |
+
+The plugin = **unconscious memory** (always running, never thought about).  
+mcporter = **intentional memory** (you reach for it when you need something specific).
+
+### Controlling what surfaces in auto-recall
+
+By default, auto-recall queries all sources — project memories *can* surface if semantically relevant. Use `recallSourceInclude` / `recallSourceExclude` to control this:
+
+```json5
+// Conversational only — project memories never bleed into auto-recall
+"recallSourceInclude": "agent:"
+
+// Everything except agentic coding sessions
+"recallSourceExclude": "agentic:"
+
+// Opt-in extras (e.g. you want podcast transcripts to surface)
+"recallSourceInclude": "agent:,podcast"
+```
+
+Both fields default to `""` — no filter, existing behaviour preserved. Applies to L1 semantic recall and L3 trending wakeup.
 
 ---
 
@@ -253,7 +317,7 @@ memory_get(memoryId=42)
 
 ## Project Status
 
-**v0.8.0** — working in production.
+**v0.9.1** — working in production.
 
 - ✅ Auto-capture (immediate, per turn)
 - ✅ Auto-recall via `before_prompt_build`
@@ -267,6 +331,7 @@ memory_get(memoryId=42)
 - ✅ Level 2 wake-up — recency injection (`<last-session>`)
 - ✅ Level 3 wake-up — trending injection (`<wakeup-context>`)
 - ✅ Cascade dedup across L1/L2/L3
+- ✅ Recall source filtering (`recallSourceInclude` / `recallSourceExclude`)
 
 **Planned:**
 - [ ] `memory_trending` and `memory_stats` tools exposed to agents
