@@ -435,10 +435,16 @@ function stripUserMetadata(text: string): string {
 }
 
 /**
- * Strip <recalled-memories> blocks to prevent recursive storage.
+ * Strip injected context blocks to prevent recursive storage and oversized memories.
+ * Removes: <recalled-memories>, <wakeup-context>, <last-session>
+ * These are all plugin-injected overhead — not real conversation content.
  */
 function stripRecalledMemories(text: string): string {
-  return text.replace(/<recalled-memories>[\s\S]*?<\/recalled-memories>/g, "").trim();
+  return text
+    .replace(/<recalled-memories>[\s\S]*?<\/recalled-memories>/g, "")
+    .replace(/<wakeup-context>[\s\S]*?<\/wakeup-context>/g, "")
+    .replace(/<last-session>[\s\S]*?<\/last-session>/g, "")
+    .trim();
 }
 
 /**
