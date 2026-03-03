@@ -1,5 +1,5 @@
 /**
- * openclaw-memory-mcp-ce-plugin  v0.9.0
+ * openclaw-memory-mcp-ce-plugin  v0.9.1
  *
  * OpenClaw memory slot plugin backed by memory-mcp-ce.
  * Replaces flat-file markdown memory with persistent semantic memory:
@@ -10,13 +10,15 @@
  *
 
 
- * v0.9.0 changes:
+ * v0.9.1 changes:
  *   - NEW: recallSourceInclude / recallSourceExclude config options for L1 recall.
  *     Both default to "" (no filter — existing behaviour preserved).
  *     Include: comma-separated source prefixes to allow (e.g. "agent:,podcast").
  *     Exclude: comma-separated source prefixes to block (e.g. "project:,agentic:").
  *     Filters are combined and forwarded to the backend source filter (supports ! prefix).
- *     L2 (recency) and L3 (trending) are unaffected — only L1 semantic recall is filtered.
+ *     L2 (recency) is already locked to agent source — unaffected.
+ *     L3 (trending) now also respects the source filter — trending labels could
+ *     otherwise surface non-conversational memories (e.g. podcast transcripts) at wakeup.
  *
  * v0.8.0 changes:
  *   - NEW: Level 3 trending wake-up injection
@@ -922,7 +924,7 @@ const plugin = {
 
     const client = new McpCeClient(cfg.serverUrl, cfg.bearerToken || undefined);
     api.logger.info(
-      `memory-mcp-ce v0.9.0: loaded (server: ${cfg.serverUrl}, ` +
+      `memory-mcp-ce v0.9.1: loaded (server: ${cfg.serverUrl}, ` +
       `recall: top-${cfg.autoRecallNumResults} above ${Math.round(cfg.minSimilarity * 100)}%, ` +
       `channels: [${cfg.allowedChannels.join(",")}])`,
     );
@@ -1179,10 +1181,11 @@ const plugin = {
               api.logger.info(`memory-mcp-ce: L3 trending — no tokens available (enrichment may be disabled or backlog all-nonce), skipping`);
             } else {
               const labelsQuery = tokens.join(", ");
+              const l3Source = buildRecallSourceFilter(cfg.recallSourceInclude, cfg.recallSourceExclude);
               const trending = await client.retrieveMemoriesStructured(
                 undefined,
                 labelsQuery,
-                undefined,
+                l3Source,
                 cfg.wakeupTrendingCount,
               );
               const fresh = trending.filter((m) => !seen.has(m.id));
@@ -1290,7 +1293,7 @@ const plugin = {
       start: async (ctx) => {
         stateDir = ctx.stateDir;
         api.logger.info(
-          `memory-mcp-ce v0.9.0: service starting (stateDir: ${stateDir})`,
+          `memory-mcp-ce v0.9.1: service starting (stateDir: ${stateDir})`,
         );
         try {
           await client.init();
