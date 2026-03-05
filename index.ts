@@ -772,19 +772,11 @@ async function storeNewPairs(
         // Back-to-back user turns: the previous user had no agent response in
         // this batch. Store it as an unpaired entry and move on.
         if (pendingUser) {
-          const content = `[User]: ${pendingUser}`;
-          const labels = ["52868312778495", dateLabel].join(",");
-          try {
-            const storedId = await client.storeMemory(content, labels, source);
-            stored++;
-            if (storedId !== null) {
-              const seen = agentSeenIds.get(agentId) ?? new Set<number>();
-              seen.add(storedId);
-              agentSeenIds.set(agentId, seen);
-            }
-          } catch (err) {
-            logger.warn(`memory-mcp-ce: failed to store unpaired user turn: ${String(err)}`);
-          }
+          // Unpaired user turn — no agent response followed. Drop it rather
+          // than storing a lone [User:] with no [Agent:] (fails store gate
+          // and pollutes memory with half-pairs).
+          logger.warn(`memory-mcp-ce: dropping unpaired user turn (back-to-back user messages, no agent response)`);
+          void 0; // explicit no-op
         }
         pendingUser = text;
         pendingUserAbsoluteIndex = watermark + i;
@@ -808,7 +800,8 @@ async function storeNewPairs(
       if (!agentText) continue;
 
       // Skip terminal no-op signals — agent had nothing real to say
-      if (cfg.noReplyTokens.includes(agentText.trim())) {
+      // Checks exact match OR response ending with the token (allows voice before the ack)
+      if (cfg.noReplyTokens.some(token => agentText.trim() === token || agentText.trimEnd().endsWith(token))) {
         pendingUser = null;
         pendingUserAbsoluteIndex = -1;
         agentTextBuffer.length = 0;
@@ -835,6 +828,19 @@ async function storeNewPairs(
       if (pendingUser) parts.push(`[User]: ${pendingUser}`);
       parts.push(`[Agent]: ${fullAgentText}`);
       const content = parts.join("\n\n");
+
+      // Sanity gate: only store well-formed pairs.
+      // A valid memory must start with [User:] and contain [Agent:].
+      // This catches drift/bleed where injected context (recalled-memories,
+      // wakeup-context etc.) bleeds in before a real user turn, or where
+      // an unpaired agent-only turn slips through.
+      if (!content.startsWith("[User]:") || !content.includes("[Agent]:")) {
+        logger.warn(`memory-mcp-ce: skipping malformed exchange (missing [User:] or [Agent:] structure)`);
+        pendingUser = null;
+        pendingUserAbsoluteIndex = -1;
+        agentTextBuffer.length = 0;
+        continue;
+      }
 
       const labels = ["52868312778495", dateLabel].join(",");
       try {
@@ -1051,8 +1057,6 @@ const plugin = {
       const agentId = ctx.agentId ?? "default";
       agentSeenIds.set(agentId, new Set());
       agentLastRecallMs.delete(agentId);
-      agentNeedsRecency.delete(agentId);
-      agentNeedsTrending.delete(agentId);
       await clearSeenIdsFromDisk(agentId);
 
       // Clear watermark for this session (messages array may be available)
@@ -1060,7 +1064,14 @@ const plugin = {
       sessionWatermark.set(sessionKey, 0);
       await clearWatermarkFromDisk(sessionKey);
 
-      api.logger.info(`memory-mcp-ce: reset — seen IDs + watermark cleared for agent ${agentId}`);
+      // Prime wakeup for the next first turn — /new is a fresh start
+      // (same as a brand new session_start with resumedFrom=false)
+      if (cfg.wakeupRecency) agentNeedsRecency.add(agentId);
+      else agentNeedsRecency.delete(agentId);
+      if (cfg.wakeupTrending) agentNeedsTrending.add(agentId);
+      else agentNeedsTrending.delete(agentId);
+
+      api.logger.info(`memory-mcp-ce: reset — seen IDs + watermark cleared for agent ${agentId}, wakeup primed`);
     });
 
     // ── Auto-recall ──────────────────────────────────────────────────────────
