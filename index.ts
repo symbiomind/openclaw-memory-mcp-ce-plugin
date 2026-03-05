@@ -1,5 +1,5 @@
 /**
- * openclaw-memory-mcp-ce-plugin  v0.9.1
+ * openclaw-memory-mcp-ce-plugin  v0.9.2
  *
  * OpenClaw memory slot plugin backed by memory-mcp-ce.
  * Replaces flat-file markdown memory with persistent semantic memory:
@@ -10,6 +10,12 @@
  *
 
 
+ * v0.9.2 changes:
+ *   - FIX: L2/L3 wakeup now primes on ALL session_start events (including resumedFrom=true).
+ *     Previously, /new from the TUI caused a plugin hot-reload — fresh Maps, empty flags —
+ *     followed by session_start with resumedFrom=true, which skipped wakeup entirely.
+ *     before_reset was never fired in this path. Fix: always prime on session_start.
+ *
  * v0.9.1 changes:
  *   - NEW: recallSourceInclude / recallSourceExclude config options for L1 recall.
  *     Both default to "" (no filter — existing behaviour preserved).
@@ -930,7 +936,7 @@ const plugin = {
 
     const client = new McpCeClient(cfg.serverUrl, cfg.bearerToken || undefined);
     api.logger.info(
-      `memory-mcp-ce v0.9.1: loaded (server: ${cfg.serverUrl}, ` +
+      `memory-mcp-ce v0.9.2: loaded (server: ${cfg.serverUrl}, ` +
       `recall: top-${cfg.autoRecallNumResults} above ${Math.round(cfg.minSimilarity * 100)}%, ` +
       `channels: [${cfg.allowedChannels.join(",")}])`,
     );
@@ -1032,22 +1038,23 @@ const plugin = {
         // Resume watermark from disk (gateway restart or daily reset)
         const diskWatermark = await loadWatermarkFromDisk(sessionKey);
         sessionWatermark.set(sessionKey, diskWatermark);
+        // Prime wakeup regardless — plugin hot-reload (/new) or daily reconnect
+        // both arrive as resumedFrom=true but still need fresh context injection.
+        // seen-IDs are cleared above, so dedup handles any re-injection naturally.
+        if (cfg.wakeupRecency) agentNeedsRecency.add(agentId);
+        if (cfg.wakeupTrending) agentNeedsTrending.add(agentId);
         api.logger.info(
           `memory-mcp-ce: session resumed for agent ${agentId}, ` +
-          `seen IDs cleared (fresh recall), watermark=${diskWatermark}`,
+          `seen IDs cleared (fresh recall), watermark=${diskWatermark}, wakeup primed`,
         );
       } else {
         // Brand new session — wipe watermark so we start from message 0
         sessionWatermark.set(sessionKey, 0);
         await clearWatermarkFromDisk(sessionKey);
-        if (cfg.wakeupRecency) {
-          agentNeedsRecency.add(agentId);
-        }
-        if (cfg.wakeupTrending) {
-          agentNeedsTrending.add(agentId);
-        }
+        if (cfg.wakeupRecency) agentNeedsRecency.add(agentId);
+        if (cfg.wakeupTrending) agentNeedsTrending.add(agentId);
         api.logger.info(
-          `memory-mcp-ce: new session for agent ${agentId}, seen IDs + watermark cleared`,
+          `memory-mcp-ce: new session for agent ${agentId}, seen IDs + watermark cleared, wakeup primed`,
         );
       }
     });
@@ -1304,7 +1311,7 @@ const plugin = {
       start: async (ctx) => {
         stateDir = ctx.stateDir;
         api.logger.info(
-          `memory-mcp-ce v0.9.1: service starting (stateDir: ${stateDir})`,
+          `memory-mcp-ce v0.9.2: service starting (stateDir: ${stateDir})`,
         );
         try {
           await client.init();

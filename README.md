@@ -83,7 +83,7 @@ Standard `auto-recall` against the opening message. Works well when the first me
 On new sessions, fetches the last N stored exchanges for this agent and injects them as a `<last-session>` block. Pure recency — no similarity threshold. Gives the agent "what were we just talking about" context immediately.
 
 ### Level 3 — Trending (`wakeupTrending`)
-Fetches trending topics from recent memory labels, retrieves memories matching those topics, and injects them as a `<wakeup-context>` block. Powered by the label enrichment cron — the more memories that have been enriched with semantic labels, the better the signal.
+Fetches trending topics from recent memory labels, retrieves memories matching those topics, and injects them as a `<wakeup-context>` block. **Requires label enrichment (`enrichmentEnabled: true`) to be configured and running.** L3 can be enabled independently, but will produce no output until memories have been enriched with semantic labels — the cron replaces the initial numeric nonces with real topic labels that trending analysis can work with. The more memories enriched, the richer the signal.
 
 ### Cascade Deduplication
 When multiple levels are active, each memory ID appears only once — at its highest-priority level. L1 claims IDs first, L2 filters L1 IDs, L3 filters both. Any combination of levels can be enabled or disabled independently without breaking the others.
@@ -94,7 +94,7 @@ When multiple levels are active, each memory ID appears only once — at its hig
 
 ## Label Enrichment Cron (Background)
 
-Stored memories are initially tagged with a numeric nonce. A background cron processes these via a tiny LLM (any OpenAI-compatible endpoint, e.g. Ollama with `ministral-3:3b`) and replaces the nonce with real semantic labels.
+Stored memories are initially tagged with a numeric nonce. A background cron processes these via a tiny LLM (any OpenAI-compatible endpoint — Ollama, OpenAI, or any compatible provider) and replaces the nonce with real semantic labels.
 
 This runs entirely in the background — no prompt overhead, no agent involvement. Adaptive interval: fast during backlog burn, slow when idle.
 
