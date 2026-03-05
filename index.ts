@@ -1,5 +1,5 @@
 /**
- * openclaw-memory-mcp-ce-plugin  v0.9.2
+ * openclaw-memory-mcp-ce-plugin  v0.9.3
  *
  * OpenClaw memory slot plugin backed by memory-mcp-ce.
  * Replaces flat-file markdown memory with persistent semantic memory:
@@ -10,6 +10,14 @@
  *
 
 
+ * v0.9.3 changes:
+ *   - FIX: L2/L3 wakeup now primes on first turn when session_start was missed.
+ *     After a gateway restart, session_start fires before the per-conversation plugin
+ *     instance loads. The plugin starts with empty Maps and never gets the event.
+ *     Fix: in the before_prompt_build handler, if this agent hasn't been seen yet
+ *     (agentSeenIds missing), prime wakeup immediately alongside the seen-ID restore.
+ *     Seen-IDs from disk prevent re-injection of already-delivered memories.
+ *
  * v0.9.2 changes:
  *   - FIX: L2/L3 wakeup now primes on ALL session_start events (including resumedFrom=true).
  *     Previously, /new from the TUI caused a plugin hot-reload — fresh Maps, empty flags —
@@ -1114,6 +1122,17 @@ const plugin = {
         if (!agentSeenIds.has(agentId)) {
           const diskIds = await loadSeenIdsFromDisk(agentId);
           agentSeenIds.set(agentId, diskIds);
+          // session_start was missed — plugin loaded after gateway restart or hot-reload
+          // before this agent's first message. Prime wakeup now so L2/L3 still fire.
+          // Seen-IDs from disk prevent re-injection of memories already delivered.
+          if (cfg.wakeupRecency && !agentNeedsRecency.has(agentId)) {
+            agentNeedsRecency.add(agentId);
+            api.logger.info(`memory-mcp-ce: session_start missed for ${agentId} — priming L2 wakeup on first turn`);
+          }
+          if (cfg.wakeupTrending && !agentNeedsTrending.has(agentId)) {
+            agentNeedsTrending.add(agentId);
+            api.logger.info(`memory-mcp-ce: session_start missed for ${agentId} — priming L3 wakeup on first turn`);
+          }
         }
         const seen = agentSeenIds.get(agentId)!;
 
